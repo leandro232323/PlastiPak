@@ -1,0 +1,45 @@
+backend/
+│
+├── src/
+│   │
+│   ├── config/
+│   │   └── db.js
+│   │
+│   ├── models/
+│   │   ├── Usuario.js
+│   │   ├── Referencia.js
+│   │   ├── Pedido.js
+│   │   ├── OrdenProduccion.js
+│   │   ├── Selladora.js
+│   │   ├── PlanillaProduccion.js
+│   │   └── RegistroSellado.js
+│   │
+│   ├── controllers/
+│   │   ├── auth.controller.js
+│   │   ├── referencias.controller.js
+│   │   ├── pedidos.controller.js
+│   │   ├── ordenesProduccion.controller.js
+│   │   ├── selladoras.controller.js
+│   │   ├── planillasProduccion.controller.js
+│   │   ├── registrosSellado.controller.js
+│   │   └── reportes.controller.js
+│   │
+│   ├── routes/
+│   │   ├── auth.routes.js
+│   │   ├── referencias.routes.js
+│   │   ├── pedidos.routes.js
+│   │   ├── ordenesProduccion.routes.js
+│   │   ├── selladoras.routes.js
+│   │   ├── planillasProduccion.routes.js
+│   │   ├── registrosSellado.routes.js
+│   │   └── reportes.routes.js
+│   │
+│   ├── middlewares/
+│   │   ├── auth.middleware.js
+│   │   └── roles.middleware.js
+│   │
+│   ├── app.js
+│   └── server.js
+│
+├── .env
+└── package.json

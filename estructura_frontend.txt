@@ -1,0 +1,42 @@
+frontend/
+│
+├── src/
+│   │
+│   ├── api/
+│   │   ├── axiosConfig.js
+│   │   ├── referenciasApi.js
+│   │   ├── pedidosApi.js
+│   │   ├── ordenesProduccionApi.js
+│   │   ├── selladorasApi.js
+│   │   ├── planillasProduccionApi.js
+│   │   ├── registrosSelladoApi.js
+│   │   └── reportesApi.js
+│   │
+│   ├── pages/
+│   │   ├── Login.jsx
+│   │   ├── Dashboard.jsx
+│   │   │
+│   │   ├── vendedor/
+│   │   │   ├── BuscarReferencias.jsx
+│   │   │   ├── CrearPedido.jsx
+│   │   │   └── MisPedidos.jsx
+│   │   │
+│   │   ├── jefeProduccion/
+│   │   │   ├── Referencias.jsx
+│   │   │   ├── OrdenesProduccion.jsx
+│   │   │   ├── Selladoras.jsx
+│   │   │   ├── PlanillasProduccion.jsx
+│   │   │   └── ReportesTurno.jsx
+│   │   │
+│   │   └── operario/
+│   │       ├── MiPlanilla.jsx
+│   │       └── RegistrarSellado.jsx
+│   │
+│   ├── routes/
+│   │   └── AppRoutes.jsx
+│   │
+│   ├── App.jsx
+│   └── main.jsx
+│
+├── .env
+└── package.json

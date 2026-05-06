@@ -1,0 +1,676 @@
+/*
+  Script de creacion de base de datos MongoDB para PlastiPak
+  Tecnologias previstas: React + Node.js/Express + MongoDB
+
+  Como ejecutarlo:
+  1) MongoDB Compass -> Playgrounds -> New Playground -> pegar este contenido -> Run.
+  2) Terminal:
+     mongosh "mongodb+srv://plastipak_user:TU_PASSWORD@clusterplastipak.a710m95.mongodb.net/plastipak_db?appName=ClusterPlastiPak" plastipak_mongodb_setup.js
+
+  Este script crea:
+  - Base de datos: plastipak_db
+  - Colecciones con validaciones JSON Schema
+  - Indices principales
+  - Datos iniciales: usuarios de prueba, 5 selladoras y una referencia de ejemplo
+
+  IMPORTANTE:
+  - No borra la base de datos por defecto.
+  - Para reiniciar todo, cambie RESET_DB a true.
+*/
+
+const DB_NAME = "plastipak_db";
+const RESET_DB = false;
+
+db = db.getSiblingDB(DB_NAME);
+
+if (RESET_DB) {
+  db.dropDatabase();
+  print(`Base de datos ${DB_NAME} eliminada y lista para recrearse.`);
+}
+
+function createOrUpdateCollection(name, validator) {
+  const exists = db.getCollectionNames().includes(name);
+
+  if (!exists) {
+    db.createCollection(name, validator);
+    print(`Coleccion creada: ${name}`);
+  } else {
+    db.runCommand({
+      collMod: name,
+      validator: validator.validator,
+      validationLevel: validator.validationLevel || "moderate",
+      validationAction: validator.validationAction || "warn"
+    });
+    print(`Coleccion actualizada: ${name}`);
+  }
+}
+
+// =====================================================
+// 1. USUARIOS
+// Roles reales del sistema: vendedor, jefe_produccion, operario
+// =====================================================
+createOrUpdateCollection("usuarios", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["nombre", "correo", "passwordHash", "rol", "estado", "createdAt", "updatedAt"],
+      properties: {
+        nombre: { bsonType: "string" },
+        correo: { bsonType: "string" },
+        passwordHash: { bsonType: "string" },
+        rol: { enum: ["vendedor", "jefe_produccion", "operario"] },
+        estado: { bsonType: "bool" },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "warn"
+});
+
+// =====================================================
+// 2. REFERENCIAS
+// Campos ajustados con base en la imagen enviada.
+// El vendedor solo consulta; el jefe de produccion crea.
+// =====================================================
+createOrUpdateCollection("referencias", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: [
+        "referencia",
+        "referenciaCorta",
+        "nombre",
+        "estado",
+        "unidadMedida",
+        "valorUnitario",
+        "parametrosTecnicos",
+        "procesosRequeridos",
+        "creadaPor",
+        "createdAt",
+        "updatedAt"
+      ],
+      properties: {
+        referencia: { bsonType: "string" },
+        referenciaCorta: { bsonType: "string" },
+        nombre: { bsonType: "string" },
+        grupo: { bsonType: ["string", "null"] },
+        estado: { enum: ["activa", "inactiva"] },
+        descripcion: { bsonType: ["string", "null"] },
+        codigoBarras: { bsonType: ["string", "null"] },
+        presentacion: { bsonType: ["string", "null"] },
+        unidadMedida: { bsonType: "string" },
+        costo: { bsonType: ["double", "int", "decimal", "null"] },
+        impuesto: { bsonType: ["double", "int", "decimal", "null"] },
+        valorUnitario: { bsonType: ["double", "int", "decimal"] },
+        precios: {
+          bsonType: "array",
+          items: {
+            bsonType: "object",
+            required: ["categoria", "precio"],
+            properties: {
+              categoria: { bsonType: "string" },
+              precio: { bsonType: ["double", "int", "decimal"] },
+              incluyeImpuesto: { bsonType: ["bool", "null"] }
+            }
+          }
+        },
+        parametrosTecnicos: {
+          bsonType: "object",
+          required: ["tipoProducto", "materiaPrima", "ancho", "sellado", "medida"],
+          properties: {
+            tipoProducto: { bsonType: "string" },
+            materiaPrima: { bsonType: "string" },
+            color: { bsonType: ["string", "null"] },
+            troquelado: { bsonType: ["string", "null"] },
+            ancho: { bsonType: ["double", "int", "decimal"] },
+            fuelleIzquierdo: { bsonType: ["double", "int", "decimal", "null"] },
+            fuelleDerecho: { bsonType: ["double", "int", "decimal", "null"] },
+            alto: { bsonType: ["double", "int", "decimal", "null"] },
+            fuelleSuperior: { bsonType: ["double", "int", "decimal", "null"] },
+            fuelleFondo: { bsonType: ["double", "int", "decimal", "null"] },
+            calibre: { bsonType: ["double", "int", "decimal", "null"] },
+            impresion: { bsonType: "bool" },
+            colores: { bsonType: "array" },
+            tipoCliente: { bsonType: ["string", "null"] },
+            tipoImpresion: { bsonType: ["string", "null"] },
+            sellado: { bsonType: "string" },
+            tratadoCara: { bsonType: ["string", "null"] },
+            medida: { bsonType: "string" }
+          }
+        },
+        procesosRequeridos: {
+          bsonType: "object",
+          required: ["extrusion", "impresion", "refilado", "sellado"],
+          properties: {
+            extrusion: { bsonType: "bool" },
+            impresion: { bsonType: "bool" },
+            refilado: { bsonType: "bool" },
+            sellado: { bsonType: "bool" }
+          }
+        },
+        creadaPor: { bsonType: "objectId" },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "warn"
+});
+
+// =====================================================
+// 3. PEDIDOS
+// El vendedor crea pedidos con referencias existentes.
+// Al confirmar, pasan directamente a produccion.
+// =====================================================
+createOrUpdateCollection("pedidos", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: [
+        "numeroPedido",
+        "vendedorId",
+        "fechaToma",
+        "fechaEntregaPactada",
+        "estadoPedido",
+        "items",
+        "totalPedido",
+        "createdAt",
+        "updatedAt"
+      ],
+      properties: {
+        numeroPedido: { bsonType: "string" },
+        vendedorId: { bsonType: "objectId" },
+        fechaToma: { bsonType: "date" },
+        fechaEntregaPactada: { bsonType: "date" },
+        estadoPedido: { enum: ["en_produccion", "finalizado"] },
+        items: {
+          bsonType: "array",
+          minItems: 1,
+          items: {
+            bsonType: "object",
+            required: [
+              "itemId",
+              "referenciaId",
+              "referencia",
+              "nombreReferencia",
+              "cantidadSolicitada",
+              "valorUnitario",
+              "subtotal",
+              "destino",
+              "estadoProduccion"
+            ],
+            properties: {
+              itemId: { bsonType: "objectId" },
+              referenciaId: { bsonType: "objectId" },
+              referencia: { bsonType: "string" },
+              referenciaCorta: { bsonType: ["string", "null"] },
+              nombreReferencia: { bsonType: "string" },
+              descripcionReferencia: { bsonType: ["string", "null"] },
+              cantidadSolicitada: { bsonType: ["int", "long", "double", "decimal"] },
+              valorUnitario: { bsonType: ["int", "long", "double", "decimal"] },
+              subtotal: { bsonType: ["int", "long", "double", "decimal"] },
+              destino: { enum: ["cliente_externo", "consumo_interno"] },
+              estadoProduccion: { enum: ["pendiente_por_material", "en_produccion", "finalizada"] }
+            }
+          }
+        },
+        totalPedido: { bsonType: ["int", "long", "double", "decimal"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "warn"
+});
+
+// =====================================================
+// 4. ORDENES DE PRODUCCION
+// Creadas por el jefe de produccion sobre una referencia especifica del pedido.
+// =====================================================
+createOrUpdateCollection("ordenes_produccion", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: [
+        "numeroOrden",
+        "pedidoId",
+        "itemPedidoId",
+        "referenciaId",
+        "cantidadProgramada",
+        "procesoControlado",
+        "estadoOrden",
+        "creadaPor",
+        "createdAt",
+        "updatedAt"
+      ],
+      properties: {
+        numeroOrden: { bsonType: "string" },
+        pedidoId: { bsonType: "objectId" },
+        itemPedidoId: { bsonType: "objectId" },
+        referenciaId: { bsonType: "objectId" },
+        referencia: { bsonType: ["string", "null"] },
+        referenciaCorta: { bsonType: ["string", "null"] },
+        nombreReferencia: { bsonType: ["string", "null"] },
+        cantidadProgramada: { bsonType: ["int", "long", "double", "decimal"] },
+        procesoControlado: { enum: ["sellado"] },
+        estadoOrden: { enum: ["pendiente_por_material", "por_programar", "programada", "en_proceso", "finalizada"] },
+        creadaPor: { bsonType: "objectId" },
+        planillaId: { bsonType: ["objectId", "null"] },
+        selladoraId: { bsonType: ["objectId", "null"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "warn"
+});
+
+// =====================================================
+// 5. SELLADORAS
+// La empresa tiene 5 selladoras; se gestionan sus capacidades.
+// =====================================================
+createOrUpdateCollection("selladoras", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["codigo", "nombre", "numero", "capacidades", "estado", "createdAt", "updatedAt"],
+      properties: {
+        codigo: { bsonType: "string" },
+        nombre: { bsonType: "string" },
+        numero: { bsonType: "int" },
+        capacidades: {
+          bsonType: "object",
+          required: ["selladoFondo", "selladoLateral", "tiposReferenciaPermitidos"],
+          properties: {
+            selladoFondo: { bsonType: "bool" },
+            selladoLateral: { bsonType: "bool" },
+            tiposReferenciaPermitidos: { bsonType: "array" }
+          }
+        },
+        estado: { enum: ["activa", "inactiva"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "warn"
+});
+
+// =====================================================
+// 6. PLANILLAS DE PRODUCCION
+// Programacion por selladora, fecha y turno.
+// =====================================================
+createOrUpdateCollection("planillas_produccion", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: [
+        "codigoPlanilla",
+        "fecha",
+        "turno",
+        "selladoraId",
+        "creadaPor",
+        "estadoPlanilla",
+        "tareas",
+        "createdAt",
+        "updatedAt"
+      ],
+      properties: {
+        codigoPlanilla: { bsonType: "string" },
+        fecha: { bsonType: "date" },
+        turno: { enum: ["turno_1", "turno_2", "turno_3"] },
+        selladoraId: { bsonType: "objectId" },
+        creadaPor: { bsonType: "objectId" },
+        estadoPlanilla: { enum: ["activa", "cerrada"] },
+        tareas: {
+          bsonType: "array",
+          items: {
+            bsonType: "object",
+            required: [
+              "tareaId",
+              "secuencia",
+              "ordenProduccionId",
+              "pedidoId",
+              "referenciaId",
+              "cantidadProgramada",
+              "estadoTarea"
+            ],
+            properties: {
+              tareaId: { bsonType: "objectId" },
+              secuencia: { bsonType: "int" },
+              ordenProduccionId: { bsonType: "objectId" },
+              pedidoId: { bsonType: "objectId" },
+              referenciaId: { bsonType: "objectId" },
+              referencia: { bsonType: ["string", "null"] },
+              nombreReferencia: { bsonType: ["string", "null"] },
+              cantidadProgramada: { bsonType: ["int", "long", "double", "decimal"] },
+              grupoSimilar: { bsonType: ["string", "null"] },
+              estadoTarea: { enum: ["pendiente", "en_proceso", "finalizada"] }
+            }
+          }
+        },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "warn"
+});
+
+// =====================================================
+// 7. REGISTROS DE SELLADO
+// Lo que registra el operario: rollo, inicio, fin y cantidad producida.
+// =====================================================
+createOrUpdateCollection("registros_sellado", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: [
+        "planillaId",
+        "tareaId",
+        "ordenProduccionId",
+        "pedidoId",
+        "referenciaId",
+        "selladoraId",
+        "operarioId",
+        "codigoRollo",
+        "fecha",
+        "turno",
+        "horaInicio",
+        "estadoRegistro",
+        "createdAt",
+        "updatedAt"
+      ],
+      properties: {
+        planillaId: { bsonType: "objectId" },
+        tareaId: { bsonType: "objectId" },
+        ordenProduccionId: { bsonType: "objectId" },
+        pedidoId: { bsonType: "objectId" },
+        referenciaId: { bsonType: "objectId" },
+        selladoraId: { bsonType: "objectId" },
+        operarioId: { bsonType: "objectId" },
+        codigoRollo: { bsonType: "string" },
+        fecha: { bsonType: "date" },
+        turno: { enum: ["turno_1", "turno_2", "turno_3"] },
+        horaInicio: { bsonType: "date" },
+        horaFin: { bsonType: ["date", "null"] },
+        cantidadBolsasProducidas: { bsonType: ["int", "long", "double", "decimal", "null"] },
+        estadoRegistro: { enum: ["en_proceso", "finalizado"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "warn"
+});
+
+// =====================================================
+// INDICES
+// =====================================================
+
+// usuarios
+db.usuarios.createIndex({ correo: 1 }, { unique: true });
+db.usuarios.createIndex({ rol: 1 });
+db.usuarios.createIndex({ estado: 1 });
+
+// referencias
+db.referencias.createIndex({ referencia: 1 }, { unique: true });
+db.referencias.createIndex({ referenciaCorta: 1 });
+db.referencias.createIndex({
+  nombre: "text",
+  descripcion: "text",
+  referencia: "text",
+  referenciaCorta: "text"
+});
+db.referencias.createIndex({ "parametrosTecnicos.tipoProducto": 1 });
+db.referencias.createIndex({ "parametrosTecnicos.materiaPrima": 1 });
+db.referencias.createIndex({ "parametrosTecnicos.ancho": 1 });
+db.referencias.createIndex({ "parametrosTecnicos.color": 1 });
+db.referencias.createIndex({ "parametrosTecnicos.sellado": 1 });
+db.referencias.createIndex({
+  "parametrosTecnicos.materiaPrima": 1,
+  "parametrosTecnicos.ancho": 1,
+  "parametrosTecnicos.tipoProducto": 1
+});
+db.referencias.createIndex({ estado: 1 });
+
+// pedidos
+db.pedidos.createIndex({ numeroPedido: 1 }, { unique: true });
+db.pedidos.createIndex({ vendedorId: 1 });
+db.pedidos.createIndex({ fechaToma: -1 });
+db.pedidos.createIndex({ fechaEntregaPactada: 1 });
+db.pedidos.createIndex({ estadoPedido: 1 });
+db.pedidos.createIndex({ "items.referenciaId": 1 });
+db.pedidos.createIndex({ "items.estadoProduccion": 1 });
+
+// ordenes
+db.ordenes_produccion.createIndex({ numeroOrden: 1 }, { unique: true });
+db.ordenes_produccion.createIndex({ pedidoId: 1 });
+db.ordenes_produccion.createIndex({ referenciaId: 1 });
+db.ordenes_produccion.createIndex({ estadoOrden: 1 });
+db.ordenes_produccion.createIndex({ procesoControlado: 1 });
+db.ordenes_produccion.createIndex({ selladoraId: 1 });
+
+// selladoras
+db.selladoras.createIndex({ codigo: 1 }, { unique: true });
+db.selladoras.createIndex({ numero: 1 }, { unique: true });
+db.selladoras.createIndex({ estado: 1 });
+
+// planillas
+db.planillas_produccion.createIndex({ codigoPlanilla: 1 }, { unique: true });
+db.planillas_produccion.createIndex({ fecha: 1, turno: 1 });
+db.planillas_produccion.createIndex({ selladoraId: 1 });
+db.planillas_produccion.createIndex({ fecha: 1, turno: 1, selladoraId: 1 }, { unique: true });
+db.planillas_produccion.createIndex({ "tareas.ordenProduccionId": 1 });
+
+// registros sellado
+db.registros_sellado.createIndex({ fecha: 1, turno: 1 });
+db.registros_sellado.createIndex({ selladoraId: 1, fecha: 1, turno: 1 });
+db.registros_sellado.createIndex({ operarioId: 1, fecha: 1 });
+db.registros_sellado.createIndex({ ordenProduccionId: 1 });
+db.registros_sellado.createIndex({ estadoRegistro: 1 });
+
+print("Indices creados correctamente.");
+
+// =====================================================
+// DATOS INICIALES
+// =====================================================
+
+const now = new Date();
+
+// Usuarios de prueba.
+// Cambiar passwordHash por claves encriptadas desde Node.js.
+db.usuarios.updateOne(
+  { correo: "vendedor@plastipak.com" },
+  {
+    $setOnInsert: {
+      nombre: "Usuario Vendedor",
+      correo: "vendedor@plastipak.com",
+      passwordHash: "CAMBIAR_POR_HASH_BCRYPT",
+      rol: "vendedor",
+      estado: true,
+      createdAt: now,
+      updatedAt: now
+    }
+  },
+  { upsert: true }
+);
+
+db.usuarios.updateOne(
+  { correo: "jefeproduccion@plastipak.com" },
+  {
+    $setOnInsert: {
+      nombre: "Usuario Jefe Produccion",
+      correo: "jefeproduccion@plastipak.com",
+      passwordHash: "CAMBIAR_POR_HASH_BCRYPT",
+      rol: "jefe_produccion",
+      estado: true,
+      createdAt: now,
+      updatedAt: now
+    }
+  },
+  { upsert: true }
+);
+
+db.usuarios.updateOne(
+  { correo: "operario@plastipak.com" },
+  {
+    $setOnInsert: {
+      nombre: "Usuario Operario",
+      correo: "operario@plastipak.com",
+      passwordHash: "CAMBIAR_POR_HASH_BCRYPT",
+      rol: "operario",
+      estado: true,
+      createdAt: now,
+      updatedAt: now
+    }
+  },
+  { upsert: true }
+);
+
+const jefe = db.usuarios.findOne({ correo: "jefeproduccion@plastipak.com" });
+
+// 5 selladoras base.
+// Ajustar capacidades reales cuando el profesor o la empresa las confirme.
+const selladorasBase = [
+  {
+    codigo: "SELL-01",
+    nombre: "Selladora 1",
+    numero: 1,
+    capacidades: {
+      selladoFondo: true,
+      selladoLateral: true,
+      tiposReferenciaPermitidos: ["B-Bolsa"]
+    },
+    estado: "activa"
+  },
+  {
+    codigo: "SELL-02",
+    nombre: "Selladora 2",
+    numero: 2,
+    capacidades: {
+      selladoFondo: true,
+      selladoLateral: false,
+      tiposReferenciaPermitidos: ["B-Bolsa"]
+    },
+    estado: "activa"
+  },
+  {
+    codigo: "SELL-03",
+    nombre: "Selladora 3",
+    numero: 3,
+    capacidades: {
+      selladoFondo: true,
+      selladoLateral: false,
+      tiposReferenciaPermitidos: ["B-Bolsa"]
+    },
+    estado: "activa"
+  },
+  {
+    codigo: "SELL-04",
+    nombre: "Selladora 4",
+    numero: 4,
+    capacidades: {
+      selladoFondo: true,
+      selladoLateral: false,
+      tiposReferenciaPermitidos: ["B-Bolsa"]
+    },
+    estado: "activa"
+  },
+  {
+    codigo: "SELL-05",
+    nombre: "Selladora 5",
+    numero: 5,
+    capacidades: {
+      selladoFondo: true,
+      selladoLateral: false,
+      tiposReferenciaPermitidos: ["B-Bolsa"]
+    },
+    estado: "activa"
+  }
+];
+
+selladorasBase.forEach((selladora) => {
+  db.selladoras.updateOne(
+    { codigo: selladora.codigo },
+    {
+      $setOnInsert: {
+        ...selladora,
+        createdAt: now,
+        updatedAt: now
+      }
+    },
+    { upsert: true }
+  );
+});
+
+// Referencia de ejemplo basada en la imagen enviada.
+if (jefe) {
+  db.referencias.updateOne(
+    { referencia: "BADBLFRA010.00102.75D02.75L018.5C0.5F0" },
+    {
+      $setOnInsert: {
+        referencia: "BADBLFRA010.00102.75D02.75L018.5C0.5F0",
+        referenciaCorta: "BADBLFRA1012.75D2.75L18.5C0.5F0",
+        nombre: "10 KG BANCA NUEVA [PUL]",
+        grupo: "BABL",
+        estado: "activa",
+        descripcion:
+          "Bolsa Polietileno Alta Densidad Blanco Franela Ancho 10 Fuelle Izquierdo 2.75 Fuelle Derecho 2.75 Alto 18.5 Calibre 0.5 PULGADAS Sellado Fondo",
+        codigoBarras: "770000018348",
+        presentacion: null,
+        unidadMedida: "unidades",
+        costo: 53.6911,
+        impuesto: null,
+        valorUnitario: 90.5,
+        precios: [
+          { categoria: "mayorista", precio: 0, incluyeImpuesto: false },
+          { categoria: "mostrador", precio: 90.5, incluyeImpuesto: true }
+        ],
+        parametrosTecnicos: {
+          tipoProducto: "B-Bolsa",
+          materiaPrima: "AD-Polietileno Alta Densidad",
+          color: "BL-Blanco",
+          troquelado: "FR-Franela",
+          ancho: 10.0,
+          fuelleIzquierdo: 2.75,
+          fuelleDerecho: 2.75,
+          alto: 18.5,
+          fuelleSuperior: null,
+          fuelleFondo: null,
+          calibre: 0.5,
+          impresion: false,
+          colores: [],
+          tipoCliente: null,
+          tipoImpresion: null,
+          sellado: "F-Sellado Fondo",
+          tratadoCara: "0-Ninguno",
+          medida: "PUL-PULGADAS"
+        },
+        procesosRequeridos: {
+          extrusion: true,
+          impresion: false,
+          refilado: false,
+          sellado: true
+        },
+        creadaPor: jefe._id,
+        createdAt: now,
+        updatedAt: now
+      }
+    },
+    { upsert: true }
+  );
+}
+
+print("Datos iniciales insertados o verificados.");
+print(`Base de datos lista: ${DB_NAME}`);
+print("Colecciones:");
+printjson(db.getCollectionNames().sort());

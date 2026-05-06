@@ -1,0 +1,5 @@
+USERNAME = plastipak_user
+PASSWORD = 12345678pacu
+URL = mongodb+srv://plastipak_user:12345678pacu@clusterplastipak.a710m95.mongodb.net/?appName=ClusterPlastiPak
+
+
