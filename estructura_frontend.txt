@@ -4,12 +4,13 @@ frontend/
 │   │
 │   ├── api/
 │   │   ├── axiosConfig.js
+│   │   ├── authApi.js
 │   │   ├── referenciasApi.js
 │   │   ├── pedidosApi.js
-│   │   ├── ordenesProduccionApi.js
+│   │   ├── ordenesApi.js
 │   │   ├── selladorasApi.js
-│   │   ├── planillasProduccionApi.js
-│   │   ├── registrosSelladoApi.js
+│   │   ├── planillasApi.js
+│   │   ├── registrosApi.js
 │   │   └── reportesApi.js
 │   │
 │   ├── pages/
@@ -21,9 +22,12 @@ frontend/
 │   │   │   ├── CrearPedido.jsx
 │   │   │   └── MisPedidos.jsx
 │   │   │
-│   │   ├── jefeProduccion/
+│   │   ├── liderProduccion/
 │   │   │   ├── Referencias.jsx
 │   │   │   ├── OrdenesProduccion.jsx
+│   │   │   └── DocumentacionProduccion.jsx
+│   │   │
+│   │   ├── auxiliarProduccion/
 │   │   │   ├── Selladoras.jsx
 │   │   │   ├── PlanillasProduccion.jsx
 │   │   │   └── ReportesTurno.jsx
